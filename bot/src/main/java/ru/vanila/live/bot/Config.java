@@ -22,10 +22,16 @@ final class Config {
     final String bridgeBind;
     final String minecraftHost;
     final int minecraftPort;
+    // Необязательные параметры для совместимости с PterodactylConsole.
+    final String panelUrl;
+    final String serverId;
+    final String panelApiKey;
 
-    private Config(String token, long guild, long chat, String secret, int port, String bind, String host, int mcPort) {
+    private Config(String token, long guild, long chat, String secret, int port, String bind, String host, int mcPort,
+                   String panelUrl, String serverId, String panelApiKey) {
         discordToken = token; guildId = guild; chatChannelId = chat; bridgeSecret = secret;
         bridgePort = port; bridgeBind = bind; minecraftHost = host; minecraftPort = mcPort;
+        this.panelUrl = panelUrl; this.serverId = serverId; this.panelApiKey = panelApiKey;
     }
     List<String> secrets() { return List.of(discordToken, bridgeSecret); }
 
@@ -58,7 +64,8 @@ final class Config {
         String host=get(file,"MC_HOST","m1.nexuz.ru").trim();
         if(host.isBlank()) errors.add("MC_HOST не задан");
         if(!errors.isEmpty()) throw new ConfigException(" - "+String.join("\n - ",errors));
-        return new Config(token,guild,chat,secret,port,bind,host,mcPort);
+        return new Config(token,guild,chat,secret,port,bind,host,mcPort,
+                get(file,"PANEL_URL",""), get(file,"PTERO_SERVER_ID",""), get(file,"PTERO_API_KEY",""));
     }
     private static int parsePort(String value,String key,List<String> errors) {
         try { int p=Integer.parseInt(value); if(p<1||p>65535) throw new NumberFormatException(); return p; }
