@@ -1,0 +1,19 @@
+# Vanila Live: настройки моста с Discord-ботом.
+bridge:
+  # Публичный HTTPS-адрес бота (туннель/VPS), БЕЗ пути и без "/" в конце.
+  # Пример: https://vanila-bot.example.com
+  url: "https://CHANGE-ME.example.com"
+  # Тот же BRIDGE_SECRET, что и в .env бота (не короче 32 символов).
+  secret: "CHANGE_ME_TO_A_RANDOM_SECRET"
+  request-timeout-seconds: 10
+  poll-wait-seconds: 8   # 1-15; короткие запросы стабильнее через туннель
+  max-retries: 5
+  queue-size: 500
+
+chat:
+  send-join-quit: true
+  minecraft-to-discord-max-length: 500
+  discord-to-minecraft-max-length: 256
+
+list:
+  page-size: 10

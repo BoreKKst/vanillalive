@@ -1,0 +1,15 @@
+name: VanilaLive
+version: '${project.version}'
+main: ru.vanila.live.plugin.VanilaLivePlugin
+api-version: '1.21'
+description: Minecraft <-> Discord bridge and paginated /list
+authors: [VanilaLive]
+commands:
+  list:
+    description: Список игроков онлайн с постраничным выводом
+    usage: /list [страница]
+    permission: vanilalive.list
+permissions:
+  vanilalive.list:
+    description: Использование /list
+    default: true
