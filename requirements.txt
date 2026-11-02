@@ -1,0 +1,1 @@
+# VanilaLive uses Java 21 and Maven. No Python dependencies.
