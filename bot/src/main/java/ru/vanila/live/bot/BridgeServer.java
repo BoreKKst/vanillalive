@@ -171,7 +171,7 @@ final class BridgeServer {
         }
         String name = esc(player);
         String text = switch (type) {
-            case "chat" -> "**" + name + "**: " + esc(msg);
+            case "chat" -> "**[GLOBAL] " + name + "**: " + esc(msg);
             case "join" -> "\uD83D\uDFE2 **" + name + "** вошёл на сервер";
             default -> "\uD83D\uDD34 **" + name + "** вышел с сервера";
         };

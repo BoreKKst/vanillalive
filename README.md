@@ -1,117 +1,73 @@
-# Vanila Live
+# VanilaLive — Minecraft ↔ Discord
 
-Мост **Minecraft (Paper 1.21.11) ⇄ Discord** на Java 21: Maven-проект из двух модулей.
+Java 21 bridge: Discord bot + existing Paper plugin. This update changes **bot code only**. The `minecraft-plugin/` source and `dist/VanilaLivePlugin.jar` are not modified.
 
-| Модуль | Что это | Результат сборки |
-|---|---|---|
-| `bot/` | Discord-бот (JDA) + локальный HTTP API | `VanilaLiveBot.jar` |
-| `minecraft-plugin/` | Paper-плагин | `VanilaLivePlugin.jar` |
+## What works
 
-> ⚠️ **Статус сборки.** Этот архив содержит **только исходный код**. JAR-файлы в нём **не** лежат: в среде, где проект писался, не было Maven и доступа в интернет (нельзя скачать Paper API, JDA, Gson). Полная сборка `mvn clean package` там **не выполнялась**. Что было проверено, см. раздел «Проверки и ограничения». Соберите проект сами командой `build.bat` (инструкция ниже).
+- Minecraft chat is sent to the configured Discord chat channel with `[GLOBAL]` label.
+- Messages in that same Discord channel are delivered into Minecraft as `[Discord] nickname: message`.
+- Discord slash command `/list` requests the Minecraft Java status endpoint and displays online count and the player names the server publishes in its status response.
+- No separate console channel and no Pterodactyl API key are required.
+- The bridge keeps the existing HMAC authentication between the bot and the installed plugin.
 
-## Как это работает
+**Important `/list` limitation:** Minecraft Server List Ping commonly publishes only a sample of player names (often up to 12), or no names at all. Therefore `/list` can always show the online count when the server status endpoint is reachable, but it cannot guarantee every online name without adding a player-list endpoint to the Minecraft plugin. The plugin was intentionally left unchanged as requested.
 
-```
-Minecraft (Nexuz)                                  Ваш ПК (Windows)
-┌──────────────────────┐   HTTPS (HMAC-подпись)   ┌───────────────────────┐
-│ VanilaLivePlugin     │ ───POST /v1/event──────▶ │ VanilaLiveBot         │ ──▶ Discord #чат
-│  - события чата/вход │ ◀──GET /v1/poll────────  │  HTTP API :8765       │ ◀── Discord #чат
-│  - /list (локально)  │      (long-poll)         │  Pterodactyl WS ──────┼──▶ Discord #консоль
-└──────────────────────┘                          └───────────────────────┘
-```
+**Chat type limitation:** the current installed plugin sends a plain Paper chat event without a local/global marker. The bot labels received chat as `[GLOBAL]`. True `[LOCAL]` versus `[GLOBAL]` classification requires the plugin/chat-system to send that metadata.
 
-* **Плагин сам обращается к боту** (исходящие соединения). На Nexuz не нужно открывать входящий порт.
-* Minecraft → Discord: плагин кладёт событие в ограниченную очередь, отдельный поток отправляет его боту с повторами (1, 2, 4… сек). Каждое событие имеет уникальный `id`, повторы не создают дублей.
-* Discord → Minecraft: плагин держит long-poll `GET /v1/poll`. Сообщения публикуются в игре через Bukkit Scheduler (главный поток).
-* Консоль: **бот** подключается к WebSocket Pterodactyl (`GET /api/client/servers/{id}/websocket` → WebSocket → `auth` → события `console output`) и отправляет строки в канал консоли пачками раз в 2 сек.
-* `/list` целиком работает на Paper API и **не зависит ни от сети, ни от бота**.
+## Configure
 
-## Что реализовано
+Create `.env` next to the bot JAR using `dist/.env.example` as a template:
 
-* Чат MC → Discord, вход/выход игроков; пустые сообщения отбрасываются; Markdown и `@упоминания` экранируются (бот вообще не создаёт упоминаний).
-* Чат Discord → MC в формате `[Discord] Ник: сообщение`; боты и webhook игнорируются (петли нет); проверка Guild ID и Channel ID; лимит 256 символов; вырезаются управляющие, невидимые и bidi-символы и `§`. Discord-пользователи **не могут** выполнять команды сервера (такого функционала нет вообще).
-* Консоль → отдельный канал: вырезаются ANSI-коды, токены/пароли/секреты, повторы схлопываются `(xN)`, сообщения делятся на части, очередь ограничена, отправка идёт в отдельном потоке.
-* `/list [страница]`: количество онлайн/слоты, страницы (по умолчанию по 10 игроков), кликабельная «Следующая страница», понятные сообщения для пустого сервера и несуществующей страницы.
-* Безопасность: общий `BRIDGE_SECRET` (≥32 символов), каждый запрос подписан HMAC-SHA256 (`метод + путь + запрос + тело + время`), окно 60 сек (защита от повторов), проверка HTTP-метода, лимит тела 16 КБ, сравнение подписи за постоянное время.
-* Токен Discord и ключ панели только в `.env`, в логи не попадают.
-
-## Сборка
-
-Нужны **JDK 21** и **Maven 3.9+** (в `PATH`) и интернет для скачивания зависимостей.
-
-```bat
-build.bat
+```env
+DISCORD_TOKEN=YOUR_DISCORD_BOT_TOKEN
+GUILD_ID=YOUR_DISCORD_SERVER_ID
+CHAT_CHANNEL_ID=YOUR_CHAT_CHANNEL_ID
+BRIDGE_SECRET=YOUR_RANDOM_SECRET_AT_LEAST_32_CHARACTERS
+MC_HOST=m1.nexuz.ru
+MC_PORT=25750
+BRIDGE_BIND=0.0.0.0
+BRIDGE_PORT=8765
 ```
 
-Готовые файлы появятся в папке `dist\`: `VanilaLiveBot.jar`, `VanilaLivePlugin.jar`, `run-bot.bat`, `.env.example`.
-Если сборка упадёт, пришлите текст ошибки Maven, и её можно будет исправить.
+Use the same `BRIDGE_SECRET` as in `plugins/VanilaLive/config.yml`. Do not share `.env`, tokens, or the secret.
 
-## Подготовка Discord
+In Discord Developer Portal enable **Message Content Intent**. Invite the bot with View Channel, Send Messages, and Use Application Commands permissions in the target server/channel. The bot registers `/list` on startup; it may take a short moment to appear.
 
-1. [Discord Developer Portal](https://discord.com/developers/applications) → ваше приложение → **Bot**.
-2. Включите **Message Content Intent** (Privileged Gateway Intents). Без него бот не читает текст сообщений.
-3. Пригласите бота на сервер (Guild `1565370345748299957`) с правами: просмотр каналов, отправка сообщений в каналах `1566008093349773422` (чат) и `1566016032504680558` (консоль).
-4. Токен бота храните только в `.env`. Никому не отправляйте и не вставляйте в чат. Если токен где-то засветился, сбросьте его (Reset Token).
+## Render deployment
 
-## Запуск бота на Windows
+1. Push this project to GitHub.
+2. In Render create a **Web Service** from the repository.
+3. Select **Docker** as the runtime; the repository `Dockerfile` builds and starts the bot.
+4. Add environment variables from the `.env` list above. Do not set `PORT` manually; Render provides it. `BRIDGE_BIND` must remain `0.0.0.0`.
+5. Deploy. Check logs for `Discord подключён`, `Slash-команда /list зарегистрирована`, and `HTTP API моста слушает 0.0.0.0:<PORT>`.
+6. Copy the public HTTPS service URL from Render into the existing plugin config:
 
-1. Положите `VanilaLiveBot.jar`, `run-bot.bat` в одну папку.
-2. Скопируйте `.env.example` → `.env` и заполните:
-   * `DISCORD_TOKEN` — токен бота;
-   * `BRIDGE_SECRET` — случайная строка ≥32 символов. Например, в PowerShell: `-join ((48..57)+(65..90)+(97..122) | Get-Random -Count 48 | % {[char]$_})`;
-   * `PTERO_API_KEY` — **Client API key** из панели (`https://mgr.nexuz.ru` → Аккаунт → API Credentials). Нужен только для консоли; без него чат работает, консоль отключена. Ключ даёт доступ от вашего имени: не публикуйте его.
-3. Запустите `run-bot.bat`. В логе должно появиться: «Discord подключён…», «HTTP API моста слушает…», «Консоль Nexuz подключена».
+```yaml
+bridge:
+  url: "https://YOUR-SERVICE.onrender.com"
+  secret: "THE_SAME_BRIDGE_SECRET"
+```
 
-## Связь Nexuz → ваш ПК (туннель)
+Restart the Minecraft server/plugin. The plugin makes outbound HTTPS requests; no inbound port on Nexuz is needed.
 
-`127.0.0.1` на Nexuz указывает на сам хостинг, а не на ваш ПК. Нужен публичный HTTPS-адрес, ведущий на порт бота (`8765`). По умолчанию бот слушает только `127.0.0.1`, поэтому наружу его выставляет туннель:
+## Local build
 
-* **Cloudflare Tunnel (cloudflared)**: самый простой вариант. Для проверки: `cloudflared tunnel --url http://localhost:8765` выдаёт временный адрес `https://что-то.trycloudflare.com` (меняется при каждом запуске). Для постоянного адреса создайте именованный туннель со своим доменом (см. документацию Cloudflare).
-* **VPS**: запустите бота на VPS и поставьте перед ним Caddy/nginx с HTTPS. Тогда компьютер можно выключать.
-* Не открывайте порт 8765 в интернет напрямую без HTTPS: подпись защищает от подделки запросов, но не от прослушивания.
+Requirements: JDK 21 and Maven 3.9+.
 
-## Установка плагина на Paper
+```bash
+mvn -B -pl bot -am clean package
+```
 
-1. Положите `VanilaLivePlugin.jar` в `plugins/` сервера на Nexuz и запустите/перезапустите сервер, чтобы создался `plugins/VanilaLive/config.yml`.
-2. В `config.yml` укажите:
-   ```yaml
-   bridge:
-     url: "https://ваш-адрес-туннеля"   # без пути и без "/" в конце
-     secret: "тот же BRIDGE_SECRET, что в .env бота"
-   ```
-3. Перезапустите сервер (или плагин). В логе: «Плагин VanilaLive включён», затем «Соединение с ботом установлено».
+The bot JAR is `bot/target/VanilaLiveBot.jar`. Copy it and `.env` into the same folder, then run:
 
-Если конфиг не заполнен, плагин **не отключается**: пишет «Неверная конфигурация…», мост выключен, `/list` работает.
+```bash
+java -jar VanilaLiveBot.jar
+```
 
-> Плагинная команда `/list` перекрывает ванильную. Если на вашем сервере отработает ванильная версия, используйте `/vanilalive:list`.
+## Discord channel flow
 
-## Проверка соединения
+- Minecraft → Discord: same configured chat channel, `[GLOBAL] Player: message`.
+- Discord → Minecraft: same channel, `[Discord] Nickname: message`.
+- `/list`: slash command in the configured Discord guild. It is not a Minecraft command.
 
-* В логе плагина «Соединение с ботом установлено» и в логе бота нет «Ошибка авторизации».
-* Напишите в игре сообщение: оно появится в канале чата. Напишите в канале чата: в игре появится `[Discord] Ник: …`.
-* Прочитать здоровье моста вручную можно только с подписью. Проще смотреть логи обеих сторон.
-
-## Если компьютер с ботом выключен
-
-Сервер Minecraft продолжает работать, `/list` работает. Плагин раз в минуту (не чаще) пишет в лог «Не удалось связаться с ботом» и переподключается с нарастающей паузой (до 60 сек). События, не отправленные за 5 попыток, отбрасываются (очередь ограничена, память не растёт). После включения бота связь восстанавливается автоматически. Сообщения за время простоя в Discord не «догоняются».
-
-## Проверки и ограничения (честно)
-
-**Выполнено:**
-* Классы, зависящие только от JDK (`Text`, `Signer`, `Redactor`, `Inbox`, `Config`), скомпилированы на JDK 21 и прошли 16 автоматических проверок: очистка текста, разбиение, HMAC, вырезание секретов, long-poll очередь с ограничением, загрузка и отклонение `.env`.
-* Остальные файлы прошли синтаксический разбор компилятором (ошибок синтаксиса нет); `plugin.yml`/`config.yml` валидны как YAML; `Signer` в боте и плагине идентичен.
-
-**НЕ выполнено (нужно сделать у себя):**
-* `mvn clean package` не запускался (нет Maven и сети), поэтому код, использующий JDA, Paper API и Gson, **не компилировался**. Возможны мелкие ошибки в именах классов/версиях API; версии `paper-api 1.21.11-R0.1-SNAPSHOT`, `JDA 5.6.1`, `gson 2.11.0` не проверялись по репозиториям.
-* Не тестировалось на живом Paper-сервере и в живом Discord.
-* **Консоль Nexuz**: реализован стандартный Pterodactyl Client API. Совместима ли панель Nexuz именно с этим API и разрешает ли Wings подключение с заголовком `Origin`, проверить без доступа к панели нельзя. При несовместимости в логе бота будет понятная ошибка, а чат продолжит работать.
-* Событие `console output` содержит и сообщения игроков; весь вывод консоли уходит в канал консоли, пока бот запущен.
-* Нет защиты от перебора запросов (rate limit) на HTTP API бота; защита строится на HMAC и туннеле.
-* Сообщения, не доставленные за 5 попыток, теряются. Это сознательный компромисс ради ограниченной памяти.
-
-## Устранение неполадок
-
-* **«Не удалось связаться с ботом: HttpTimeoutException» / HTTP 502** — бесплатный быстрый туннель Cloudflare нестабилен, а адрес меняется при каждом запуске. Плагин сам повторяет попытки. Для постоянной работы используйте именованный туннель со своим доменом или VPS. Запускайте туннель так: `cloudflared tunnel --url http://127.0.0.1:8765`.
-* **Бот «замирает» в окне консоли Windows** — случайный клик/выделение мышью ставит консоль на паузу. Нажмите Esc или отключите «Выделение мышью» в свойствах окна.
-* **Дубли входа/выхода** — убедитесь, что запущен ровно один процесс бота (`java.exe` в диспетчере задач) и в `plugins` один jar плагина.
-* **Старый `config.yml` после обновления** не перезаписывается: поставьте `poll-wait-seconds: 8` вручную.
+The bridge does not execute Discord messages as Minecraft console commands.
